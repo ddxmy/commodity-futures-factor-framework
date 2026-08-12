@@ -1,0 +1,18 @@
+# Numerical computing and tabular data
+numpy==2.3.3
+pandas==2.3.3
+
+# Statistical tests
+scipy==1.16.2
+statsmodels==0.14.5
+
+# Convex portfolio optimization
+cvxpy==1.9.2
+
+# Charts
+matplotlib==3.10.6
+
+# Jupyter notebook environment
+jupyterlab==4.4.10
+ipykernel==6.30.1
+nbformat==5.10.4
