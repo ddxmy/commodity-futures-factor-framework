@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 
+from config.settings import MIN_DAYS_TO_MATURITY
 from src.p01_market_data import load_contract_daily
 
 
@@ -49,14 +50,22 @@ def _select_ranked_contract(
     return selected
 
 
-def build_contract_mapping(start_date: str, end_date: str) -> pd.DataFrame:
+def build_contract_mapping(
+    start_date: str,
+    end_date: str,
+    min_days_to_maturity: int = MIN_DAYS_TO_MATURITY,
+) -> pd.DataFrame:
     """Build the daily A/B/C panel ranked by contract trading volume.
 
     A, B and C denote the first, second and third contracts by liquidity;
     they do not imply a fixed maturity order. Signed maturity differences
     preserve the near-minus-far direction in the factor formula.
     """
-    df = load_contract_daily(start_date, end_date).reset_index()
+    df = load_contract_daily(
+        start_date,
+        end_date,
+        min_days_to_maturity=min_days_to_maturity,
+    ).reset_index()
     df = df.sort_values(["ts_code", "trade_date"]).reset_index(drop=True)
     previous_close = df.groupby("ts_code")["close"].shift(1)
     df["daily_return"] = np.log(df["close"] / previous_close)

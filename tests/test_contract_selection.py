@@ -8,6 +8,40 @@ from src.p02_contract_selection import build_contract_mapping
 
 class ContractSelectionTest(unittest.TestCase):
     @patch("src.p02_contract_selection.load_contract_daily")
+    def test_explicit_maturity_cutoff_reaches_contract_loading(self, mock_load):
+        mock_load.return_value = pd.DataFrame(
+            [
+                {
+                    "trade_date": pd.Timestamp("2024-01-02"),
+                    "fut_code": "RB",
+                    "ts_code": "RB_FAR",
+                    "vol": 4000,
+                    "oi": 30000,
+                    "amount": 10000,
+                    "close": 100.0,
+                    "days_to_maturity": 60,
+                    "avg_vol": 4000,
+                    "avg_oi": 30000,
+                    "avg_amount": 10000,
+                    "rank_by_vol": 1,
+                }
+            ]
+        ).set_index("trade_date")
+
+        result = build_contract_mapping(
+            "20240101",
+            "20240131",
+            min_days_to_maturity=45,
+        )
+
+        self.assertEqual(result.loc[0, "ts_code_A"], "RB_FAR")
+        mock_load.assert_called_once_with(
+            "20240101",
+            "20240131",
+            min_days_to_maturity=45,
+        )
+
+    @patch("src.p02_contract_selection.load_contract_daily")
     def test_builds_unique_abc_mapping_from_liquidity_ranks(self, mock_load):
         dates = pd.to_datetime(["2024-01-02", "2024-01-03"])
         records = []

@@ -11,6 +11,7 @@ from src.p07_factor_evaluation import (
     calculate_group_nav,
     calculate_ic_series,
     calculate_group_returns,
+    periods_per_year,
     summarize_ic_statistics,
     summarize_factor_periods,
 )
@@ -206,6 +207,67 @@ class LockedForwardReturnTest(unittest.TestCase):
 
 
 class FactorTestPanelTest(unittest.TestCase):
+    def test_build_factor_panel_accepts_weekly_rebalance_frequency(self):
+        signal_dates = pd.to_datetime(
+            ["2024-01-05", "2024-01-11", "2024-01-19"]
+        )
+        weights = pd.DataFrame(
+            {
+                "trade_date": signal_dates.repeat(2),
+                "fut_code": ["A", "B"] * 3,
+                "weight_factor": [1.0, -1.0] * 3,
+                "ts_code_A": ["A2405.DCE", "B2405.DCE"] * 3,
+                "is_rebalance": [True] * 6,
+            }
+        )
+        calendar = pd.DataFrame(
+            {
+                "trade_date": pd.to_datetime(
+                    [
+                        "2024-01-05",
+                        "2024-01-08",
+                        "2024-01-11",
+                        "2024-01-12",
+                        "2024-01-19",
+                        "2024-01-22",
+                    ]
+                )
+            }
+        )
+        prices = pd.DataFrame(
+            {
+                "trade_date": pd.to_datetime(
+                    [
+                        "2024-01-08",
+                        "2024-01-08",
+                        "2024-01-12",
+                        "2024-01-12",
+                        "2024-01-22",
+                        "2024-01-22",
+                    ]
+                ),
+                "ts_code": ["A2405.DCE", "B2405.DCE"] * 3,
+                "open": [100.0, 200.0, 101.0, 198.0, 102.0, 196.0],
+            }
+        )
+
+        panel = build_factor_test_panel(
+            "20240101",
+            "20240122",
+            "prepared",
+            1,
+            rebalance_freq="W-FRI",
+            min_assets=2,
+            prepared_weights=weights,
+            prepared_calendar=calendar,
+            prepared_prices=prices,
+        )
+
+        self.assertEqual(
+            panel["signal_date"].drop_duplicates().tolist(),
+            signal_dates[:-1].tolist(),
+        )
+
     @patch("src.p07_factor_evaluation.load_contract_prices")
     @patch("src.p07_factor_evaluation.load_trade_calendar")
     @patch("src.p07_factor_evaluation.generate_weights")
@@ -362,7 +424,7 @@ class FactorTestPanelTest(unittest.TestCase):
         )
 
     def test_rejects_invalid_panel_parameters(self):
-        for invalid_freq in [0, 21, 1.5]:
+        for invalid_freq in [0, -1, 1.5, "W-SUN"]:
             with self.subTest(rebalance_freq=invalid_freq):
                 with self.assertRaises(ValueError):
                     build_factor_test_panel(
@@ -500,6 +562,18 @@ class ICSeriesTest(unittest.TestCase):
 
 
 class ICStatisticsTest(unittest.TestCase):
+    def test_maps_rebalance_frequency_to_observations_per_year(self):
+        self.assertEqual(periods_per_year(1), 252.0)
+        self.assertEqual(periods_per_year(5), 252.0 / 5.0)
+        self.assertEqual(periods_per_year(10), 252.0 / 10.0)
+        self.assertEqual(periods_per_year("W-FRI"), 52.0)
+
+    def test_rejects_invalid_annualization_frequencies(self):
+        for value in [True, 0, -1, "W-SUN", "monthly"]:
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    periods_per_year(value)
+
     def test_summarizes_ic_and_rank_ic_with_significance_tests(self):
         ic_series = pd.DataFrame(
             {
@@ -568,6 +642,52 @@ class ICStatisticsTest(unittest.TestCase):
                 self.assertTrue(pd.isna(row["p_value"]))
                 self.assertTrue(pd.isna(row["nw_t_stat"]))
                 self.assertTrue(pd.isna(row["nw_p_value"]))
+
+    def test_annualizes_icir_at_requested_signal_frequency(self):
+        ic_series = pd.DataFrame(
+            {
+                "signal_date": pd.date_range(
+                    "2024-01-05", periods=4, freq="W-FRI"
+                ),
+                "ic": [0.01, 0.02, 0.03, 0.04],
+                "rank_ic": [0.04, 0.03, 0.02, 0.01],
+            }
+        )
+        raw_icir = 0.025 / pd.Series(
+            [0.01, 0.02, 0.03, 0.04]
+        ).std(ddof=1)
+
+        weekly = summarize_ic_statistics(
+            ic_series,
+            nw_lags=1,
+            annualization_periods=52.0,
+        ).set_index("metric")
+        every_five_days = summarize_ic_statistics(
+            ic_series,
+            nw_lags=1,
+            annualization_periods=252.0 / 5.0,
+        ).set_index("metric")
+
+        self.assertAlmostEqual(
+            weekly.loc["ic", "icir_annualized"],
+            raw_icir * (52.0 ** 0.5),
+        )
+        self.assertAlmostEqual(
+            every_five_days.loc["ic", "icir_annualized"],
+            raw_icir * ((252.0 / 5.0) ** 0.5),
+        )
+
+    def test_rejects_invalid_annualization_periods(self):
+        ic_series = pd.DataFrame(
+            {"ic": [0.1, 0.2], "rank_ic": [0.2, 0.1]}
+        )
+        for value in [0, -1, float("nan")]:
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    summarize_ic_statistics(
+                        ic_series,
+                        annualization_periods=value,
+                    )
 
     def test_rejects_invalid_newey_west_lags(self):
         ic_series = pd.DataFrame(

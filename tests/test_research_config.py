@@ -12,6 +12,8 @@ class ResearchConfigTest(unittest.TestCase):
         self.assertEqual(config.min_assets, 10)
         self.assertEqual(config.group_count, 5)
         self.assertEqual(config.rolling_ic_window, 20)
+        self.assertEqual(config.signal_min_days_to_maturity, 0)
+        self.assertEqual(config.trade_min_days_to_maturity, 45)
 
     def test_rejects_invalid_values(self):
         invalid_cases = [
@@ -21,6 +23,10 @@ class ResearchConfigTest(unittest.TestCase):
             {"group_count": 1},
             {"rolling_ic_window": 0},
             {"nw_lags": -1},
+            {"signal_min_days_to_maturity": -1},
+            {"signal_min_days_to_maturity": True},
+            {"trade_min_days_to_maturity": -1},
+            {"trade_min_days_to_maturity": 45.5},
         ]
 
         for parameters in invalid_cases:

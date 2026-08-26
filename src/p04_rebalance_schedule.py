@@ -5,28 +5,35 @@ from collections.abc import Iterable
 import pandas as pd
 
 
+WEEKDAY_NAMES = {"MON", "TUE", "WED", "THU", "FRI"}
+
+
 def get_rebalance_dates(
     trade_dates: Iterable,
     freq: int | str,
 ) -> set[pd.Timestamp]:
-    """Return rebalance dates selected by trading-day interval or weekday."""
-    dates = pd.Series(pd.to_datetime(sorted(trade_dates)))
+    """Return first-day-anchored integer or week-ending rebalance dates."""
+    dates = pd.DatetimeIndex(
+        pd.to_datetime(sorted(trade_dates))
+    ).drop_duplicates()
     if dates.empty:
         return set()
 
-    if isinstance(freq, int):
+    if isinstance(freq, int) and not isinstance(freq, bool):
         if freq <= 0:
             raise ValueError("freq must be a positive integer")
-        return set(dates.iloc[::freq])
+        return set(dates[::freq])
 
-    if isinstance(freq, str) and freq.startswith("W-"):
-        weekday_map = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4}
-        weekday = freq[2:].upper()
-        if weekday not in weekday_map:
-            raise ValueError("weekly freq must use MON, TUE, WED, THU or FRI")
-        target = weekday_map[weekday]
-        date_index = pd.DatetimeIndex(dates)
-        mask = date_index.dayofweek == target
-        return set(date_index[mask])
+    if isinstance(freq, str):
+        normalized = freq.strip().upper()
+        if normalized.startswith("W-"):
+            weekday = normalized[2:]
+            if weekday not in WEEKDAY_NAMES:
+                raise ValueError(
+                    "weekly freq must use MON, TUE, WED, THU or FRI"
+                )
+            periods = dates.to_period(normalized)
+            selected = pd.Series(dates, index=periods).groupby(level=0).max()
+            return set(pd.DatetimeIndex(selected))
 
     raise ValueError("freq must be a positive integer or a value such as W-FRI")

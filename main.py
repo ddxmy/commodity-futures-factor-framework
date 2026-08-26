@@ -12,6 +12,7 @@ from src.research_pipeline import run_factor_research
 
 DEFAULT_START_DATE = "20190101"
 DEFAULT_END_DATE = "20260710"
+WEEKLY_FREQUENCIES = {"W-MON", "W-TUE", "W-WED", "W-THU", "W-FRI"}
 
 
 def _parse_parameter_value(value: str) -> object:
@@ -46,6 +47,24 @@ def parse_factor_parameters(items: list[str] | None) -> dict[str, object]:
     return parameters
 
 
+def parse_rebalance_frequency(value: str) -> int | str:
+    """Parse a positive trading-day interval or supported weekly schedule."""
+    normalized = value.strip().upper()
+    try:
+        interval = int(normalized)
+    except ValueError:
+        if normalized in WEEKLY_FREQUENCIES:
+            return normalized
+        raise argparse.ArgumentTypeError(
+            "rebalance frequency must be a positive integer or W-MON to W-FRI"
+        )
+    if interval <= 0:
+        raise argparse.ArgumentTypeError(
+            "rebalance frequency must be a positive integer"
+        )
+    return interval
+
+
 def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     """Read command-line options without running database work."""
     parser = argparse.ArgumentParser(
@@ -60,12 +79,26 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--start", default=DEFAULT_START_DATE)
     parser.add_argument("--end", default=DEFAULT_END_DATE)
-    parser.add_argument("--rebalance-freq", type=int, default=1)
+    parser.add_argument(
+        "--rebalance-freq",
+        type=parse_rebalance_frequency,
+        default=1,
+    )
     parser.add_argument("--cost-rate", type=float, default=0.0005)
     parser.add_argument("--min-assets", type=int, default=10)
     parser.add_argument("--group-count", type=int, default=5)
     parser.add_argument("--rolling-window", type=int, default=20)
     parser.add_argument("--nw-lags", type=int, default=5)
+    parser.add_argument(
+        "--signal-min-days-to-maturity",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--trade-min-days-to-maturity",
+        type=int,
+        default=45,
+    )
     parser.add_argument("--zscore-clip", type=float, default=3.0)
     parser.add_argument("--result-dir", type=Path, default=Path(RESULT_DIR))
     return parser.parse_args(argv)
@@ -98,6 +131,12 @@ def main(argv: list[str] | None = None) -> Path:
         group_count=args.group_count,
         rolling_ic_window=args.rolling_window,
         nw_lags=args.nw_lags,
+        signal_min_days_to_maturity=(
+            args.signal_min_days_to_maturity
+        ),
+        trade_min_days_to_maturity=(
+            args.trade_min_days_to_maturity
+        ),
     )
     print(f"Running {args.factor}: {args.start} to {args.end}")
     output_dir = run_factor_research(

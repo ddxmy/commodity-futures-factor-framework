@@ -13,9 +13,38 @@ class RebalanceScheduleTest(unittest.TestCase):
         result = get_rebalance_dates(self.dates, 5)
         self.assertEqual(result, {self.dates[0], self.dates[5]})
 
-    def test_selects_requested_weekday(self):
-        result = get_rebalance_dates(self.dates, "W-FRI")
-        self.assertTrue(all(date.dayofweek == 4 for date in result))
+    def test_selects_last_actual_trading_day_of_each_friday_ending_week(self):
+        dates = pd.to_datetime(
+            [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+                "2024-01-09",
+                "2024-01-10",
+                "2024-01-11",
+            ]
+        )
+
+        result = get_rebalance_dates(dates, "W-FRI")
+
+        self.assertEqual(
+            result,
+            {pd.Timestamp("2024-01-05"), pd.Timestamp("2024-01-11")},
+        )
+
+    def test_integer_schedule_is_anchored_on_first_sample_date(self):
+        dates = pd.to_datetime(
+            ["2024-01-03", "2024-01-04", "2024-01-05", "2024-01-08"]
+        )
+
+        result = get_rebalance_dates(dates, 2)
+
+        self.assertEqual(
+            result,
+            {pd.Timestamp("2024-01-03"), pd.Timestamp("2024-01-05")},
+        )
 
     def test_rejects_invalid_frequency(self):
         for freq in [0, -1, "W-SUN", "MONTHLY"]:

@@ -29,6 +29,63 @@ class BacktestDiagnosticsTest(unittest.TestCase):
         self.assertEqual(result.loc[1, "exec_weight"], 0.0)
         self.assertIsNone(result.loc[1, "trade_ts_code"])
 
+    def test_next_open_uses_contract_locked_on_signal_date(self):
+        dates = pd.to_datetime(
+            ["2024-01-02", "2024-01-03", "2024-01-04"]
+        )
+        weights = pd.DataFrame(
+            {
+                "trade_date": dates,
+                "fut_code": ["A", "A", "A"],
+                "weight": [0.05, 0.05, 0.05],
+                "is_rebalance": [True, False, False],
+                "ts_code_A": [
+                    "A2405.DCE",
+                    "A2409.DCE",
+                    "A2409.DCE",
+                ],
+            }
+        )
+        prices = pd.DataFrame(
+            {
+                "trade_date": dates.repeat(2),
+                "ts_code": ["A2405.DCE", "A2409.DCE"] * 3,
+                "open": [100.0, 200.0, 101.0, 201.0, 102.0, 202.0],
+                "close": [100.0, 200.0, 101.0, 201.0, 102.0, 202.0],
+                "prev_close": [100.0, 200.0, 100.0, 200.0, 101.0, 201.0],
+            }
+        )
+        captured = {}
+        original_resolver = backtest_engine.resolve_executed_positions
+
+        def capture_execution(targets, contract_prices):
+            executed = original_resolver(targets, contract_prices)
+            captured["executed"] = executed.copy()
+            return executed
+
+        with patch.object(
+            backtest_engine,
+            "resolve_executed_positions",
+            side_effect=capture_execution,
+        ):
+            backtest_engine.run_backtest(
+                start_date="20240102",
+                end_date="20240104",
+                prepared_weights=weights,
+                prepared_prices=prices,
+            )
+
+        executed = captured["executed"].set_index("trade_date")
+        next_day = executed.loc[pd.Timestamp("2024-01-03")]
+        self.assertEqual(
+            next_day["desired_trade_ts_code"],
+            "A2405.DCE",
+        )
+        self.assertEqual(
+            next_day["trade_ts_code"],
+            "A2405.DCE",
+        )
+
     @patch("src.p06_backtest_engine.load_contract_prices")
     @patch("src.p06_backtest_engine.generate_weights")
     def test_run_backtest_does_not_trade_when_open_is_missing(

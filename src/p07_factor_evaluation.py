@@ -13,6 +13,24 @@ from src.p01_market_data import (
 from src.p05_portfolio_construction import build_target_weights, generate_weights
 
 
+WEEKLY_FREQUENCIES = {"W-MON", "W-TUE", "W-WED", "W-THU", "W-FRI"}
+
+
+def periods_per_year(rebalance_freq: int | str) -> float:
+    """Return expected independent signal observations per year."""
+    if isinstance(rebalance_freq, int) and not isinstance(rebalance_freq, bool):
+        if rebalance_freq <= 0:
+            raise ValueError("rebalance_freq must be positive")
+        return 252.0 / rebalance_freq
+    if isinstance(rebalance_freq, str):
+        normalized = rebalance_freq.strip().upper()
+        if normalized in WEEKLY_FREQUENCIES:
+            return 52.0
+    raise ValueError(
+        "rebalance_freq must be a positive integer or W-MON to W-FRI"
+    )
+
+
 def build_execution_schedule(trade_dates, signal_dates) -> pd.DataFrame:
     """把信号日映射为下一交易日开仓和下一期执行日平仓。"""
     dates = (
@@ -137,13 +155,7 @@ def build_factor_test_panel(
     _price_loader=None,
 ) -> pd.DataFrame:
     """构建横截面因子值与下一持有期收益的对齐面板。"""
-    if (
-        not isinstance(rebalance_freq, int)
-        or not 1 <= rebalance_freq <= 20
-    ):
-        raise ValueError(
-            "rebalance_freq必须是1到20之间的整数"
-        )
+    periods_per_year(rebalance_freq)
 
     if min_assets < 2:
         raise ValueError(
@@ -317,14 +329,24 @@ def calculate_ic_series(panel) -> pd.DataFrame:
 def summarize_ic_statistics(
     ic_series,
     nw_lags=5,
+    annualization_periods=252.0,
 ) -> pd.DataFrame:
-    """汇总 IC 与 Rank IC 的统计量和显著性检验。"""
+    """汇总 IC 与 Rank IC，并按信号频率年化 ICIR。"""
     if (
         not isinstance(nw_lags, int)
         or nw_lags < 0
     ):
         raise ValueError(
             "nw_lags必须是大于等于0的整数"
+        )
+    if (
+        not isinstance(annualization_periods, (int, float))
+        or isinstance(annualization_periods, bool)
+        or not np.isfinite(annualization_periods)
+        or annualization_periods <= 0
+    ):
+        raise ValueError(
+            "annualization_periods must be a positive finite number"
         )
     records = []
 
@@ -347,7 +369,7 @@ def summarize_ic_statistics(
             and std_value > 0
         ):
             icir_raw = mean_value / std_value
-            icir_annualized = icir_raw * np.sqrt(252)
+            icir_annualized = icir_raw * np.sqrt(annualization_periods)
             t_test = stats.ttest_1samp(
                 values,
                 popmean=0.0,
