@@ -6,8 +6,8 @@
 
 ```text
 P01 读取市场数据
- -> P02 选择主力交易合约和 A/B/C 期限合约
- -> 因子插件计算 raw_factor
+ -> P02 分别选择信号 A/B/C 与交易主力合约
+ -> 因子插件使用信号合约计算 raw_factor
  -> P03 验证标准因子面板
  -> P04 生成调仓日期
  -> P05 构建 Rank 和 Z-score 多空权重
@@ -17,6 +17,16 @@ P01 读取市场数据
 ```
 
 正式入口是 [`main.py`](main.py)，公共研究流程使用 `p01` 至 `p08` 模块。
+
+## 因子研究记录
+
+- [因子表现索引与登记规则](docs/factor_performance/README.md)
+- [基差动量因子档案](docs/factor_performance/basis_momentum.md)
+- [Carry因子档案](docs/factor_performance/carry.md)
+- 本地逐实验汇总：`results/factor_registry.csv`
+
+`results/` 保存可重新生成的回测证据，不受 Git 管理；`docs/factor_performance/`
+保存需要长期追踪的研究结论。
 
 ## 运行基差动量
 
@@ -34,7 +44,7 @@ python main.py \
 结果保存在：
 
 ```text
-results/AB_L252-20190101-20260710/
+results/basis_momentum/AB_L252-20190101-20260710/daily/
 ```
 
 其中包括运行参数、策略指标、策略净值、IC、Rank IC、五组收益、五组净值和三张图。
@@ -98,10 +108,16 @@ python main.py \
 - 调仓频率和交易成本。
 - 最低横截面商品数。
 - 流动性门槛。
+- 信号合约与交易合约各自的剩余期限门槛。
 - 分组数量和滚动 IC 窗口。
 - 可选组合优化器参数。
 
 因子参数只描述公式；公共参数描述所有因子共同遵守的研究口径。
+
+默认 `signal_min_days_to_maturity=0`，因此期限结构信号使用真实的
+成交量排名 A/B/C；默认 `trade_min_days_to_maturity=45`，因此组合交易
+仍使用至少剩余45个日历日的主力合约。两套 mapping 按品种和信号日连接，
+信号合约不会被误当作交易合约。
 
 ## 时间和交易口径
 
