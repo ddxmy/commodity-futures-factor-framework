@@ -9,7 +9,7 @@ statsmodels==0.14.5
 # Machine-learning factor combinations
 scikit-learn==1.8.0
 lightgbm==4.7.0
-xgboost==3.4.1
+xgboost==3.2.0
 
 # Convex portfolio optimization
 cvxpy==1.9.2
