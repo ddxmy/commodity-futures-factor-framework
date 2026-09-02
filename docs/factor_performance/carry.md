@@ -86,4 +86,4 @@ A、B是流动性排名，不保证期限先后；`d_AB`使用带符号的到期
 
 - [因子表现记录规则](README.md)
 - [基差动量因子表现](basis_momentum.md)
-- [本地实验登记表](../../results/factor_registry.csv)
+- 本地实验登记表：`results/factor_registry.csv`

@@ -1,14 +1,23 @@
-# 因子表现记录
+# 五因子研究档案
 
-本目录保存需要长期维护的研究结论。原始 CSV、净值和图表仍保存在
-`results/`；这里记录因子定义、统一口径、样本内外表现、参数稳定性和当前判断。
+五因子主策略使用 `basis_momentum`、`carry`、`spotmain`、
+`s_warehouse` 和 `t_rank`。本目录保存经过人工复核、适合长期跟踪的
+单因子研究结论，不代替五因子策略的统一结果报告。
 
-## 当前档案
+原始 CSV、净值和图表由程序生成在 `results/`，该目录默认不受 Git
+管理。因此，GitHub 仓库保存方法、代码和已整理档案；完整数值结果需使用本地数据库重新生成。
 
-| 因子 | 当前状态 | 研究样本 | 近期样本 | 数据截至 |
-|---|---|---|---|---|
-| [基差动量](basis_momentum.md) | Degrading | 2010–2022表现强且显著 | 2023年至今仍为正，但明显衰减 | 2026-07-10 |
-| [Carry](carry.md) | Degrading | K120在多个H下表现较强 | 2023年至今接近失效 | 2026-07-10 |
+## 策略因子与档案状态
+
+| 因子 | 五因子策略参数 | 单因子档案 | 当前记录 |
+|---|---|---|---|
+| [基差动量](basis_momentum.md) | AB，K=252 | 已建立 | 2010–2022表现较强，2023年后明显衰减 |
+| [Carry](carry.md) | K=90 | 已建立 | 早期表现较强，2023年后接近失效 |
+| SpotMain | K=90 | 尚未建立独立档案 | 已纳入策略和统一 IC/回测输出 |
+| S_Warehouse | K=90，平滑窗口20 | 尚未建立独立档案 | 已纳入策略和统一 IC/回测输出 |
+| T_Rank | K=20 | 尚未建立独立档案 | 已纳入策略和统一 IC/回测输出 |
+
+“尚未建立独立档案”不表示因子没有运行；它表示尚未把分样本、参数稳定性和不利结果整理为单独的 Git 文档。策略层面的五因子结果由 `src.multi_factor_strategy` 统一生成。
 
 状态含义：
 
@@ -21,12 +30,13 @@
 ## 证据层级
 
 ```text
-results/<factor>/...              原始回测证据
-results/factor_registry.csv       所有标准报告的逐实验快照
-docs/factor_performance/<factor>  长期研究判断
+results/multi_factor_strategy/...  五因子策略结果
+results/<factor>/...               单因子原始回测证据
+results/factor_registry.csv        单因子标准报告的逐实验快照
+docs/factor_performance/<factor>   人工复核后的长期研究判断
 ```
 
-`results/factor_registry.csv` 当前由各报告目录中的 `run_config.csv`、
+`results/factor_registry.csv` 由各单因子报告目录中的 `run_config.csv`、
 `strategy_metrics.csv` 和 `ic_summary.csv` 汇总。`results/` 不受 Git 管理，
 因此 CSV 是便于筛选的本地快照，因子档案才是应随代码提交的长期记录。
 
@@ -71,5 +81,5 @@ factor + variant + K + H + start_date + end_date + portfolio + cost
 
 ## 相关文档
 
-- [运行命令与结果文件示例](../运行与结果示例.md)
-- [项目入口说明](../../README.md)
+- [五因子策略运行与结果说明](../运行与结果示例.md)
+- [项目主页](../../README.md)
