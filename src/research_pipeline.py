@@ -23,6 +23,7 @@ from src.p07_factor_evaluation import (
     calculate_group_nav,
     calculate_group_returns,
     calculate_ic_series,
+    periods_per_year,
     summarize_ic_statistics,
 )
 from src.p08_reporting import (
@@ -42,26 +43,53 @@ def build_factor_label(
         variant = str(factor_parameters.get("variant", "AB")).upper()
         lookback = factor_parameters.get("lookback", "default")
         return f"{variant}_L{lookback}"
+    if factor_name == "t_rank":
+        lookback = factor_parameters.get("lookback", 10)
+        return f"t_rank_L{lookback}"
     return factor_name
 
 
 def build_output_directory(
     result_dir: str | Path,
+    factor_name: str,
     factor_label: str,
     start_date: str,
     end_date: str,
+    rebalance_freq: int | str = 1,
 ) -> Path:
-    """Return the dedicated folder for one factor and research period."""
-    return Path(result_dir) / f"{factor_label}-{start_date}-{end_date}"
+    """Return the factor-period folder and schedule-specific child folder."""
+    base = (
+        Path(result_dir)
+        / factor_name
+        / f"{factor_label}-{start_date}-{end_date}"
+    )
+    return base / build_rebalance_directory_name(rebalance_freq)
+
+
+def build_rebalance_directory_name(rebalance_freq: int | str) -> str:
+    """Return a stable result subdirectory for one rebalance schedule."""
+    if rebalance_freq == 1:
+        return "daily"
+    if isinstance(rebalance_freq, int) and not isinstance(rebalance_freq, bool):
+        return f"every_{rebalance_freq}_trading_days"
+    normalized = str(rebalance_freq).upper()
+    if normalized == "W-FRI":
+        return "weekly_last_trading_day"
+    return normalized.lower().replace("-", "_")
 
 
 def prepare_contract_context(
     factor_data: pd.DataFrame,
     start_date: str,
     end_date: str,
+    min_days_to_maturity: int | None = None,
 ) -> pd.DataFrame:
     """Return trading-contract and liquidity fields independent of the factor."""
-    if set(CONTRACT_CONTEXT_COLUMNS).issubset(factor_data.columns):
+    can_reuse_factor_context = (
+        min_days_to_maturity is None
+        and set(CONTRACT_CONTEXT_COLUMNS).issubset(factor_data.columns)
+    )
+    if can_reuse_factor_context:
         context = factor_data[CONTRACT_CONTEXT_COLUMNS].copy()
     else:
         requested_start = pd.to_datetime(start_date)
@@ -69,7 +97,16 @@ def prepare_contract_context(
         load_start = (
             requested_start - pd.Timedelta(days=buffer_days)
         ).strftime("%Y%m%d")
-        context = build_contract_mapping(load_start, end_date)
+        mapping_kwargs = {}
+        if min_days_to_maturity is not None:
+            mapping_kwargs["min_days_to_maturity"] = (
+                min_days_to_maturity
+            )
+        context = build_contract_mapping(
+            load_start,
+            end_date,
+            **mapping_kwargs,
+        )
         context = context.loc[
             context["trade_date"].ge(requested_start),
             CONTRACT_CONTEXT_COLUMNS,
@@ -154,7 +191,11 @@ def evaluate_factor_from_data(
         raise ValueError("factor evaluation panel is empty")
 
     ic_series = calculate_ic_series(panel)
-    ic_summary = summarize_ic_statistics(ic_series, nw_lags=config.nw_lags)
+    ic_summary = summarize_ic_statistics(
+        ic_series,
+        nw_lags=config.nw_lags,
+        annualization_periods=periods_per_year(config.rebalance_freq),
+    )
     grouped_panel = assign_five_groups(panel, group_count=config.group_count)
     group_returns = calculate_group_returns(grouped_panel)
     group_nav = calculate_group_nav(group_returns)
@@ -180,6 +221,10 @@ def run_factor_research(
         raise ValueError("zscore_clip must be positive")
     parameters = dict(factor_parameters or {})
     config = research_config or ResearchConfig()
+    parameters.setdefault(
+        "signal_min_days_to_maturity",
+        config.signal_min_days_to_maturity,
+    )
 
     trade_calendar = load_trade_calendar(start_date, end_date)
     factor_data = calculate_factor(
@@ -193,6 +238,7 @@ def run_factor_research(
         factor_data,
         start_date,
         end_date,
+        min_days_to_maturity=config.trade_min_days_to_maturity,
     )
     prices = load_contract_prices(start_date, end_date)
     factor_label = build_factor_label(factor_name, parameters)
@@ -215,9 +261,11 @@ def run_factor_research(
 
     output_dir = build_output_directory(
         result_dir,
+        factor_name,
         factor_label,
         start_date,
         end_date,
+        config.rebalance_freq,
     )
     run_metadata = {
         "factor_name": factor_name,

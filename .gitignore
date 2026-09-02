@@ -7,6 +7,10 @@ __pycache__/
 # AI agent project files (local-only, not committed)
 CLAUDE.md
 CODEX.md
+.codex_backup/
+docs/superpowers/
+商品期货五因子策略/
+商品期货五因子策略.zip
 
 # Data
 data/raw/

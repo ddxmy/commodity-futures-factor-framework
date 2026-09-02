@@ -13,12 +13,27 @@ def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
     return sqlite3.connect(db_path)
 
 
+def validate_min_days_to_maturity(
+    value: int,
+    name: str = "min_days_to_maturity",
+) -> int:
+    """Return one validated non-negative calendar-day cutoff."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return value
+
+
 def load_contract_daily(
     start_date: str,
     end_date: str,
     db_path: str = DB_PATH,
+    min_days_to_maturity: int = MIN_DAYS_TO_MATURITY,
 ) -> pd.DataFrame:
     """Return eligible contracts and rolling liquidity measures by date."""
+    min_days_to_maturity = validate_min_days_to_maturity(
+        min_days_to_maturity
+    )
+
     query = """
     SELECT
         u.trade_date,
@@ -60,7 +75,7 @@ def load_contract_daily(
         ).dt.days
 
     df = df[
-        df['days_to_maturity'] >= MIN_DAYS_TO_MATURITY
+        df['days_to_maturity'] >= min_days_to_maturity
     ].copy()
 
     calendar = load_trade_calendar(start_date, end_date, db_path=db_path).copy()
@@ -208,6 +223,71 @@ def load_contract_prices(
     ].copy()
 
     return prices
+
+
+def load_spot_daily(
+    start_date: str,
+    end_date: str,
+    db_path: str = DB_PATH,
+) -> pd.DataFrame:
+    """Return raw daily spot observations for the requested period."""
+    query = """
+    SELECT
+        trade_date,
+        fut_code,
+        spot_price,
+        source
+    FROM spot_price
+    WHERE trade_date BETWEEN ? AND ?
+    ORDER BY trade_date, fut_code
+    """
+    with closing(get_connection(db_path)) as connection:
+        spot = pd.read_sql_query(
+            query,
+            connection,
+            params=(start_date, end_date),
+        )
+
+    spot["trade_date"] = pd.to_datetime(
+        spot["trade_date"],
+        errors="raise",
+    )
+    return spot
+
+
+def load_warehouse_daily(
+    start_date: str,
+    end_date: str,
+    db_path: str = DB_PATH,
+) -> pd.DataFrame:
+    """Return audited product-day warehouse receipts for the period."""
+    query = """
+    SELECT
+        trade_date,
+        fut_code,
+        exchange,
+        warehouse_total,
+        source_row_count,
+        used_row_count,
+        quality_status,
+        quality_note,
+        source
+    FROM warehouse_daily
+    WHERE trade_date BETWEEN ? AND ?
+    ORDER BY trade_date, fut_code
+    """
+    with closing(get_connection(db_path)) as connection:
+        warehouse = pd.read_sql_query(
+            query,
+            connection,
+            params=(start_date, end_date),
+        )
+
+    warehouse["trade_date"] = pd.to_datetime(
+        warehouse["trade_date"],
+        errors="raise",
+    )
+    return warehouse
 
 
 def load_trade_calendar(

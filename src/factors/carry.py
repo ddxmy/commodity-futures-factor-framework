@@ -1,8 +1,9 @@
-"""Liquidity-ranked basis momentum factor.
+"""Liquidity-ranked main/sub-main carry factor.
 
-The signal annualizes the return difference between adjacent contracts by
-their signed maturity gap. A negative gap is meaningful: it automatically
-keeps the near-minus-far direction when liquidity ranks change maturity order.
+The signal annualizes the close-price spread between the first- and
+second-ranked contracts by their signed maturity gap, then averages it over
+a rolling window. A negative maturity gap remains meaningful when liquidity
+ranks do not follow maturity order.
 """
 
 from collections.abc import Mapping
@@ -10,7 +11,6 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
-from config.settings import LOOKBACK
 from src.p01_market_data import (
     load_trade_calendar,
     validate_min_days_to_maturity,
@@ -18,21 +18,20 @@ from src.p01_market_data import (
 from src.p02_contract_selection import build_contract_mapping
 
 
-FACTOR_NAME = "basis_momentum"
+FACTOR_NAME = "carry"
+
 DEFAULT_PARAMETERS: dict[str, object] = {
-    "variant": "AB",
-    "lookback": LOOKBACK,
+    "lookback": 90,
     "signal_min_days_to_maturity": 0,
 }
-VALID_VARIANTS = {"AB", "BC", "BLEND"}
 
 
-def compute_basis_components(
+def compute_main_sub_carry(
     contract_mapping: pd.DataFrame,
     trade_calendar: pd.DataFrame,
     lookback: int,
 ) -> pd.DataFrame:
-    """Compute rolling AB and BC signals on a complete trade-date panel."""
+    """Compute daily main/sub-main carry and its rolling mean."""
     if not isinstance(lookback, int) or lookback <= 0:
         raise ValueError("lookback must be a positive integer")
 
@@ -40,11 +39,10 @@ def compute_basis_components(
         "trade_date",
         "fut_code",
         "ts_code_A",
-        "daily_return_A",
-        "daily_return_B",
-        "daily_return_C",
+        "ts_code_B",
+        "close_A",
+        "close_B",
         "d_AB",
-        "d_BC",
     }
     missing_columns = required_columns - set(contract_mapping.columns)
     if missing_columns:
@@ -56,54 +54,67 @@ def compute_basis_components(
         raise ValueError("trade_calendar is missing trade_date")
 
     df = contract_mapping.copy()
-    df["trade_date"] = pd.to_datetime(df["trade_date"])
-    df = df.sort_values(["fut_code", "trade_date"])
+    df['trade_date'] = pd.to_datetime(df['trade_date'])
+
     if df.duplicated(["trade_date", "fut_code"]).any():
-        raise ValueError("contract mapping contains duplicate date-commodity keys")
+        raise ValueError(
+            "contract mapping contains duplicate date-commodity keys"
+        )
 
-    df["d_AB"] = df["d_AB"].replace(0, np.nan)
-    df["d_BC"] = df["d_BC"].replace(0, np.nan)
-    df["daily_factor_AB"] = (
-        (df["daily_return_A"] - df["daily_return_B"]) / df["d_AB"] * 365
-    )
-    df["daily_factor_BC"] = (
-        (df["daily_return_B"] - df["daily_return_C"]) / df["d_BC"] * 365
+    df = df.sort_values(['fut_code', 'trade_date']).reset_index(drop=True)
+
+    df['d_AB'] = df['d_AB'].replace(0, np.nan)
+
+    df['daily_carry'] = (
+        -(df['close_B'] - df['close_A'])
+        / df['close_A']
+        * 365.0
+        / df['d_AB']
     )
 
-    calendar_dates = pd.to_datetime(trade_calendar["trade_date"])
-    products = sorted(df["fut_code"].dropna().unique())
+    calendar_dates = pd.to_datetime(
+        trade_calendar['trade_date']
+    )
+    products = sorted(
+        df['fut_code'].dropna().unique()
+    )
     panel = pd.MultiIndex.from_product(
         [calendar_dates, products],
-        names=["trade_date", "fut_code"],
+        names=['trade_date', 'fut_code']
     ).to_frame(index=False)
+
     df = panel.merge(
         df,
-        on=["trade_date", "fut_code"],
-        how="left",
-        validate="one_to_one",
+        on=['trade_date', 'fut_code'],
+        how='left',
+        validate='one_to_one',
     )
-    df["has_contract_mapping"] = df["ts_code_A"].notna()
-    df = df.sort_values(["fut_code", "trade_date"]).reset_index(drop=True)
+    df['has_contract_mapping'] = df['ts_code_A'].notna()
+    df = df.sort_values(
+        ['fut_code', 'trade_date'],
+    ).reset_index(drop=True)
 
-    for component in ["AB", "BC"]:
-        daily_column = f"daily_factor_{component}"
-        factor_column = f"factor_{component}"
-        df[factor_column] = df.groupby("fut_code")[daily_column].transform(
-            lambda values: values.rolling(
+    df['main_sub_carry'] = (
+        df.groupby('fut_code')['daily_carry']
+        .transform(
+            lambda x: x.rolling(
                 window=lookback,
                 min_periods=lookback,
             ).mean()
         )
+    )
+
     return df
 
 
-def load_basis_components(
+
+def load_main_sub_carry(
     start_date: str,
     end_date: str,
     lookback: int,
     signal_min_days_to_maturity: int,
 ) -> pd.DataFrame:
-    """Load enough history and return both rolling basis components."""
+    """Load enough history and return the rolling carry panel."""
     requested_start = pd.to_datetime(start_date)
     buffer_days = lookback * 2 + 30
     load_start = (
@@ -116,7 +127,7 @@ def load_basis_components(
         min_days_to_maturity=signal_min_days_to_maturity,
     )
     calendar = load_trade_calendar(load_start, end_date)
-    return compute_basis_components(mapping, calendar, lookback)
+    return compute_main_sub_carry(mapping, calendar, lookback)
 
 
 def calculate_factor(
@@ -124,34 +135,28 @@ def calculate_factor(
     end_date: str,
     parameters: Mapping[str, object] | None = None,
 ) -> pd.DataFrame:
-    """Return one selected basis-momentum variant as ``raw_factor``."""
+    """Return main/sub-main carry as the standard ``raw_factor`` panel."""
     settings = dict(DEFAULT_PARAMETERS)
     settings.update(dict(parameters or {}))
-    variant = str(settings["variant"]).upper()
     lookback = settings["lookback"]
     signal_min_days_to_maturity = validate_min_days_to_maturity(
         settings["signal_min_days_to_maturity"],
         "signal_min_days_to_maturity",
     )
-    if variant not in VALID_VARIANTS:
-        raise ValueError("variant must be AB, BC or BLEND")
     if not isinstance(lookback, int) or lookback <= 0:
         raise ValueError("lookback must be a positive integer")
 
-    df = load_basis_components(
+    df = load_main_sub_carry(
         start_date,
         end_date,
         lookback,
         signal_min_days_to_maturity,
     )
-    if variant == "AB":
-        raw_factor = df["factor_AB"]
-    elif variant == "BC":
-        raw_factor = df["factor_BC"]
-    else:
-        raw_factor = (df["factor_AB"] + df["factor_BC"]) / 2.0
-
     result = df.copy()
-    result["raw_factor"] = raw_factor
+    result["raw_factor"] = df["main_sub_carry"]
     requested_start = pd.to_datetime(start_date)
-    return result.loc[result["trade_date"] >= requested_start].reset_index(drop=True)
+    requested_end = pd.to_datetime(end_date)
+    return result.loc[
+        (result["trade_date"] >= requested_start)
+        & (result["trade_date"] <= requested_end)
+    ].reset_index(drop=True)

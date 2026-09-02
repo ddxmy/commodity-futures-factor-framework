@@ -1,7 +1,9 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
+import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.p08_reporting import (
@@ -104,6 +106,27 @@ class ReportingTest(unittest.TestCase):
             self.assertTrue(
                 all((output / name).stat().st_size > 0 for name in expected_files)
             )
+
+    def test_ic_plot_uses_frequency_neutral_observation_labels(self):
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "ic.png"
+            with patch("src.p08_reporting.plt.close") as mock_close:
+                plot_ic_history(
+                    self.factor_results["ic_series"],
+                    2,
+                    output,
+                )
+            figure = mock_close.call_args.args[0]
+
+        self.assertEqual(
+            [line.get_label() for line in figure.axes[0].lines[:2]],
+            ["单期 IC", "2 期均值"],
+        )
+        self.assertEqual(
+            [line.get_label() for line in figure.axes[1].lines[:2]],
+            ["单期 Rank IC", "2 期均值"],
+        )
+        plt.close(figure)
 
 
 if __name__ == "__main__":

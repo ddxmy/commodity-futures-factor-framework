@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from src.factor_loader import calculate_factor, load_factor_module
+from src.factors import _factor_template
 from src.p03_factor_processing import validate_factor_data
 
 
@@ -85,6 +86,57 @@ class FactorLoaderTest(unittest.TestCase):
             "20240131",
             {"lookback": 252, "variant": "AB"},
         )
+
+
+class FactorTemplateTest(unittest.TestCase):
+    def test_standard_wrapper_applies_defaults_trims_dates_and_sets_raw_factor(self):
+        panel = pd.DataFrame(
+            {
+                "trade_date": pd.to_datetime(
+                    ["2023-12-29", "2024-01-02", "2024-01-03"]
+                ),
+                "fut_code": ["RB", "RB", "RB"],
+                "factor_value": [0.10, 0.20, 0.30],
+            }
+        )
+        calls = []
+
+        def fake_load(
+            start_date,
+            end_date,
+            lookback,
+            signal_min_days_to_maturity,
+        ):
+            calls.append(
+                (
+                    start_date,
+                    end_date,
+                    lookback,
+                    signal_min_days_to_maturity,
+                )
+            )
+            return panel
+
+        with patch.object(
+            _factor_template,
+            "load_factor_data",
+            side_effect=fake_load,
+            create=True,
+        ):
+            try:
+                result = _factor_template.calculate_factor(
+                    "20240101",
+                    "20240103",
+                )
+            except NotImplementedError:
+                self.fail("factor template must implement the standard wrapper")
+
+        self.assertEqual(calls, [("20240101", "20240103", 90, 0)])
+        self.assertEqual(
+            result["trade_date"].tolist(),
+            list(pd.to_datetime(["2024-01-02", "2024-01-03"])),
+        )
+        self.assertEqual(result["raw_factor"].tolist(), [0.20, 0.30])
 
 
 if __name__ == "__main__":

@@ -132,7 +132,7 @@ def plot_ic_history(
     rolling_window: int,
     output_path: str | Path,
 ) -> None:
-    """Plot daily IC, Rank IC and their rolling means."""
+    """Plot periodic IC, Rank IC and their rolling observation means."""
     plot_data = calculate_rolling_ic(ic_series, rolling_window).set_index(
         "signal_date"
     )
@@ -144,14 +144,14 @@ def plot_ic_history(
         color="#9EBBDD",
         alpha=0.45,
         linewidth=1.0,
-        label="每日 IC",
+        label="单期 IC",
     )
     axes[0].plot(
         plot_data.index,
         plot_data["ic_rolling"],
         color="#2E6DB4",
         linewidth=1.8,
-        label=f"{rolling_window} 日均值",
+        label=f"{rolling_window} 期均值",
     )
     axes[0].axhline(0.0, color="#333333", linewidth=0.9)
     axes[0].set_title("IC")
@@ -165,14 +165,14 @@ def plot_ic_history(
         color="#E9A6A6",
         alpha=0.45,
         linewidth=1.0,
-        label="每日 Rank IC",
+        label="单期 Rank IC",
     )
     axes[1].plot(
         plot_data.index,
         plot_data["rank_ic_rolling"],
         color="#C43D3D",
         linewidth=1.8,
-        label=f"{rolling_window} 日均值",
+        label=f"{rolling_window} 期均值",
     )
     axes[1].axhline(0.0, color="#333333", linewidth=0.9)
     axes[1].set_title("Rank IC")
